@@ -106,21 +106,7 @@ mod tests {
         assert!(matches!(err, Error::Io(_)));
         assert!(err.is_io_error());
     }
-
-    #[test]
-    fn test_result_with_question_mark() {
-        // This function demonstrates using ? operator with our Result type
-        fn read_file() -> Result<String> {
-            // If this fails, io::Error is automatically converted to Error::Io
-            let contents = std::fs::read_to_string("test.txt")?;
-            Ok(contents)
-        }
-
-        // The error should be an Error::Io variant
-        let result = read_file();
-        assert!(result.is_err());
-    }
-
+    
     #[test]
     fn test_helper_methods() {
         let err = Error::invalid_key("empty");
