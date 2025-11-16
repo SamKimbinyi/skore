@@ -1,38 +1,49 @@
-use skore_core::{Result, Store};
+use skore_core::{Error, Result, Store};
 use std::collections::BTreeMap;
+use std::sync::{Arc,RwLock};
 
 pub struct MemoryStore {
-    data: BTreeMap<Vec<u8>, Vec<u8>>,
+    data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
 }
 
 impl MemoryStore {
     pub fn new() -> Self {
         MemoryStore {
-            data: BTreeMap::new(),
+            data: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 }
 
 impl Store for MemoryStore {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        Ok(self.data.get(key).cloned())
+        let data = self.data.read()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        Ok(data.get(key).cloned())
     }
 
-    fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        self.data.insert(key, value);
+    fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        //     ^^^^^ - &self with interior mutability!
+        let mut data = self.data.write()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        data.insert(key, value);
         Ok(())
     }
 
-    fn delete(&mut self, key: &[u8]) -> Result<()> {
-        self.data.remove(key);
+    fn delete(&self, key: &[u8]) -> Result<()> {
+        //        ^^^^^ - &self
+        let mut data = self.data.write()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        data.remove(key);
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<()> {
-        self.data.clear();
+    fn flush(&self) -> Result<()> {
         Ok(())
     }
-}
+    }
 
 #[cfg(test)]
 mod tests {
@@ -99,7 +110,6 @@ mod tests {
     #[test]
     fn test_empty_store() {
         let store = MemoryStore::new();
-        // Empty store should return None for any key
         assert_eq!(store.get(b"any").unwrap(), None);
     }
 }
