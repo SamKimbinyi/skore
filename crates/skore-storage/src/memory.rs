@@ -55,7 +55,6 @@ mod tests {
     fn test_overwrite_value() {
         let mut store = MemoryStore::new();
         store.set(b"key".to_vec(), b"value1".to_vec()).unwrap();
-
         store.set(b"key".to_vec(), b"value2".to_vec()).unwrap();
         assert_eq!(store.get(b"key").unwrap(), Some(b"value2".to_vec()));
     }

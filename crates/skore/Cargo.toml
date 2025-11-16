@@ -6,3 +6,5 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+skore-core = { path = "../skore-core" }
+skore-storage = { path = "../skore-storage" }

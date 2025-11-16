@@ -23,6 +23,10 @@ dependencies = [
 [[package]]
 name = "skore"
 version = "0.1.0"
+dependencies = [
+ "skore-core",
+ "skore-storage",
+]
 
 [[package]]
 name = "skore-cli"
