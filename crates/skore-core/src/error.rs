@@ -106,7 +106,7 @@ mod tests {
         assert!(matches!(err, Error::Io(_)));
         assert!(err.is_io_error());
     }
-    
+
     #[test]
     fn test_helper_methods() {
         let err = Error::invalid_key("empty");
