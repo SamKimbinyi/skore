@@ -44,20 +44,13 @@ mod tests {
         let mut skore = Skore::default();
         let key = b"foo";
         let value = b"bar";
-
-        // Initially key should not exist
         assert!(skore.get(key).unwrap().is_none());
 
-        // Set a value
         skore.set(key, value).unwrap();
         assert_eq!(skore.get(key).unwrap(), Some(value.to_vec()));
 
-        // Delete the value
         skore.delete(key).unwrap();
         assert!(skore.get(key).unwrap().is_none());
-
-        // Flush should succeed (no-op for MemoryStore)
-        skore.flush().unwrap();
     }
 
     #[test]
@@ -68,17 +61,12 @@ mod tests {
         let key = b"hello";
         let value = b"world";
 
-        // Set and get
         skore.set(key, value).unwrap();
         let stored = skore.get(key).unwrap();
         assert_eq!(stored, Some(value.to_vec()));
 
-        // Delete
         skore.delete(key).unwrap();
         assert!(skore.get(key).unwrap().is_none());
-
-        // Flush
-        skore.flush().unwrap();
     }
 
     #[test]
@@ -91,7 +79,6 @@ mod tests {
         skore.set(key, value1).unwrap();
         assert_eq!(skore.get(key).unwrap(), Some(value1.to_vec()));
 
-        // Overwrite
         skore.set(key, value2).unwrap();
         assert_eq!(skore.get(key).unwrap(), Some(value2.to_vec()));
     }
@@ -110,7 +97,6 @@ mod tests {
             assert_eq!(skore.get(k).unwrap(), Some(v.to_vec()));
         }
 
-        // Delete one key
         skore.delete(b"two").unwrap();
         assert!(skore.get(b"two").unwrap().is_none());
     }

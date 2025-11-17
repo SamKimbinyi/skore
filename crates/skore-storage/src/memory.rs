@@ -1,6 +1,6 @@
 use skore_core::{Error, Result, Store};
 use std::collections::BTreeMap;
-use std::sync::{Arc,RwLock};
+use std::sync::{Arc, RwLock};
 
 pub struct MemoryStore {
     data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
@@ -16,15 +16,18 @@ impl MemoryStore {
 
 impl Store for MemoryStore {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let data = self.data.read()
+        let data = self
+            .data
+            .read()
             .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
 
         Ok(data.get(key).cloned())
     }
 
     fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        //     ^^^^^ - &self with interior mutability!
-        let mut data = self.data.write()
+        let mut data = self
+            .data
+            .write()
             .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
 
         data.insert(key, value);
@@ -32,8 +35,9 @@ impl Store for MemoryStore {
     }
 
     fn delete(&self, key: &[u8]) -> Result<()> {
-        //        ^^^^^ - &self
-        let mut data = self.data.write()
+        let mut data = self
+            .data
+            .write()
             .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
 
         data.remove(key);
@@ -41,9 +45,15 @@ impl Store for MemoryStore {
     }
 
     fn flush(&self) -> Result<()> {
+        let mut data = self
+            .data
+            .write()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        data.clear();
         Ok(())
     }
-    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -51,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_set_and_get() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         store.set(b"key".to_vec(), b"value".to_vec()).unwrap();
         assert_eq!(store.get(b"key").unwrap(), Some(b"value".to_vec()));
     }
@@ -64,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_overwrite_value() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         store.set(b"key".to_vec(), b"value1".to_vec()).unwrap();
         store.set(b"key".to_vec(), b"value2".to_vec()).unwrap();
         assert_eq!(store.get(b"key").unwrap(), Some(b"value2".to_vec()));
@@ -72,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         store.set(b"key".to_vec(), b"value".to_vec()).unwrap();
         store.delete(b"key").unwrap();
         assert_eq!(store.get(b"key").unwrap(), None);
@@ -80,14 +90,14 @@ mod tests {
 
     #[test]
     fn test_delete_nonexistent_key() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         // Deleting a key that doesn't exist should not panic
         assert!(store.delete(b"missing").is_ok());
     }
 
     #[test]
     fn test_flush() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         store.set(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         store.set(b"key2".to_vec(), b"value2".to_vec()).unwrap();
         store.flush().unwrap();
@@ -97,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_multiple_keys() {
-        let mut store = MemoryStore::new();
+        let store = MemoryStore::new();
         store.set(b"a".to_vec(), b"1".to_vec()).unwrap();
         store.set(b"b".to_vec(), b"2".to_vec()).unwrap();
         store.set(b"c".to_vec(), b"3".to_vec()).unwrap();

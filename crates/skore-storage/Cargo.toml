@@ -6,4 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+memmap2 = "0.9.9"
+rkyv = "0.8.12"
 skore-core = { path = "../skore-core" }
+serde = { version = "1.0.215", features = ["derive"] }
