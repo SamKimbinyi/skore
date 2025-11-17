@@ -36,10 +36,12 @@ impl Entry {
         result
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<(&ArchivedEntry, usize), skore_core::Error> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<(Entry, usize), skore_core::Error> {
         let len = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
 
-        todo!("Lots of reading to do here")
+        let data = rkyv::from_bytes::<Self,Error>(&bytes[4..4 + len]).expect("Failed to deserialize entry");
+        Ok((data,4+len))
+
     }
 }
 
@@ -48,4 +50,68 @@ fn current_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_entry_creation() {
+        let key = b"test_key".to_vec();
+        let value = b"test_value".to_vec();
+        let entry = Entry::new(key.clone(), value.clone());
+
+        assert_eq!(entry.key, key);
+        assert_eq!(entry.value, Some(value));
+        assert!(entry.timestamp > 0);
+    }
+
+    #[test]
+    fn test_tombstone_creation() {
+        let key = b"deleted_key".to_vec();
+        let entry = Entry::tombstone(key.clone());
+
+        assert_eq!(entry.key, key);
+        assert_eq!(entry.value, None);
+        assert!(entry.timestamp > 0);
+    }
+
+    #[test]
+    fn test_timestamp_increments() {
+        let entry1 = Entry::new(b"key1".to_vec(), b"value1".to_vec());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let entry2 = Entry::new(b"key2".to_vec(), b"value2".to_vec());
+
+        assert!(entry2.timestamp >= entry1.timestamp);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_roundtrip() {
+        let key = b"test_key".to_vec();
+        let value = b"test_value".to_vec();
+        let entry = Entry::new(key.clone(), value.clone());
+
+        let bytes = entry.to_bytes();
+        let (deserialized, size) = Entry::from_bytes(&bytes).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.key, entry.key);
+        assert_eq!(deserialized.value, entry.value);
+        assert_eq!(deserialized.timestamp, entry.timestamp);
+        assert_eq!(size, bytes.len());
+    }
+
+    #[test]
+    fn test_tombstone_serialize_deserialize() {
+        let key = b"deleted_key".to_vec();
+        let entry = Entry::tombstone(key.clone());
+
+        let bytes = entry.to_bytes();
+        let (deserialized, size) = Entry::from_bytes(&bytes).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.key, entry.key);
+        assert_eq!(deserialized.value, None);
+        assert_eq!(deserialized.timestamp, entry.timestamp);
+        assert_eq!(size, bytes.len());
+    }
 }
