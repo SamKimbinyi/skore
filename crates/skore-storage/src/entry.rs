@@ -1,7 +1,7 @@
+use rkyv::util::AlignedVec;
 use rkyv::{Archive, Deserialize, Serialize, rancor::Error, with::AsBox};
 use std::fmt::Debug;
 use std::time::{SystemTime, UNIX_EPOCH};
-use rkyv::util::AlignedVec;
 
 ///Disk format, going to attempt rkyv and memmap
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
@@ -39,14 +39,16 @@ impl Entry {
 
     pub fn from_bytes(bytes: &[u8]) -> Result<(Entry, usize), skore_core::Error> {
         let len = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+
+        //We have to use an aligned vector because the first 4 bytes are used for size
         let mut aligned = AlignedVec::<16>::new();
         aligned.extend_from_slice(&bytes[4..4 + len]);
 
-
-        let archived = rkyv::access::<ArchivedEntry,Error>(&aligned).expect("Failed to load ArchivedEntry");
-        let data: Entry = rkyv::deserialize::<Entry,Error>(archived).expect("Failed to deserialize entry");
-        Ok((data,4+len))
-
+        let archived =
+            rkyv::access::<ArchivedEntry, Error>(&aligned).expect("Failed to load ArchivedEntry");
+        let data: Entry =
+            rkyv::deserialize::<Entry, Error>(archived).expect("Failed to deserialize entry");
+        Ok((data, 4 + len))
     }
 }
 
