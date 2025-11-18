@@ -2,6 +2,7 @@ use crate::entry::Entry;
 use memmap2::Mmap;
 use skore_core::{Error, Result, Store};
 use std::collections::HashMap;
+use std::fmt::format;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -49,7 +50,54 @@ impl FileStore {
     pub fn rebuild_index(&self) -> Result<()> {
         self.remap()?;
 
-        todo!("Scan the file and rebuild the index")
+        let mmap_guard = self
+            .mmap
+            .read()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        let mmap = mmap_guard
+            .as_ref()
+            .ok_or_else(|| Error::internal(("No mmap available")))?;
+
+        let mut index = self
+            .index
+            .write()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        let mut offset = 0;
+
+        let bytes = &mmap[..];
+
+        while offset < bytes.len() {
+            let start_offset = offset;
+
+            match Entry::from_bytes(&bytes[offset..]) {
+                Ok((archived_entry, len)) => {
+                    let key = archived_entry.key.to_vec();
+
+                    if archived_entry.value.is_some() {
+                        index.insert(
+                            key,
+                            EntryPos {
+                                offset: start_offset as u64,
+                                len,
+                            },
+                        );
+                    } else {
+                        index.remove(&key);
+                    }
+                    offset += len;
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+
+        //update the filesize
+        *self.file_size.write().unwrap() = offset as u64;
+
+        Ok(())
     }
 
     fn remap(&self) -> Result<()> {
