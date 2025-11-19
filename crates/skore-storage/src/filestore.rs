@@ -2,8 +2,8 @@ use crate::entry::Entry;
 use memmap2::Mmap;
 use skore_core::{Error, Result, Store};
 use std::collections::HashMap;
-use std::fmt::format;
 use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -57,7 +57,7 @@ impl FileStore {
 
         let mmap = mmap_guard
             .as_ref()
-            .ok_or_else(|| Error::internal(("No mmap available")))?;
+            .ok_or_else(|| Error::internal("No mmap available"))?;
 
         let mut index = self
             .index
@@ -123,7 +123,51 @@ impl FileStore {
     }
 
     pub fn append_entry(&self, entry: Entry) -> Result<()> {
-        todo!("Add entry to the bottom of file")
+        let bytes = entry.to_bytes();
+        let entry_len = bytes.len();
+
+        let mut file = self
+            .file
+            .write()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        let mut file_size = self
+            .file_size
+            .write()
+            .map_err(|e| Error::internal(format!("Lock Poisoned: {}", e)))?;
+
+        let offset = *file_size;
+
+        //Go to the end of the file
+        file.seek(SeekFrom::Start(offset))?;
+
+        file.write_all(&bytes)?;
+        file.flush()?;
+        *file_size += entry_len as u64;
+
+        let mut index = self
+            .index
+            .write()
+            .map_err(|e| Error::internal(format!("Lock Poisoned: {}", e)))?;
+
+        if entry.value.is_some() {
+            index.insert(
+                entry.key.clone(),
+                EntryPos {
+                    offset,
+                    len: entry_len as usize,
+                },
+            );
+        } else {
+            //tombstone
+            index.remove(&bytes);
+        }
+
+        drop(file);
+        drop(file_size);
+        drop(index);
+        self.remap()?;
+        Ok(())
     }
 
     pub fn read_entry(&self, pos: EntryPos) -> Result<Vec<u8>> {

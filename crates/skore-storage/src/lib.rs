@@ -1,5 +1,5 @@
 mod entry;
+mod filestore;
 mod memory;
-mod store;
 
 pub use memory::MemoryStore;
