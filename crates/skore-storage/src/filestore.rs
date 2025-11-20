@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy)]
 
-struct EntryPos {
+pub struct EntryPos {
     offset: u64,
     len: usize,
 }
@@ -171,7 +171,28 @@ impl FileStore {
     }
 
     pub fn read_entry(&self, pos: EntryPos) -> Result<Vec<u8>> {
-        todo!("Read entry")
+        let mmap_guard = self
+            .mmap
+            .read()
+            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+
+        let mmap = mmap_guard
+            .as_ref()
+            .ok_or_else(|| Error::internal("No mmap available"))?;
+
+        let start = pos.offset as usize;
+        let end = start + pos.len;
+
+        if end > mmap.len() {
+            return Err(Error::corruption("Entry position out of bounds"));
+        }
+
+        let (archived_entry, _) = Entry::from_bytes(&mmap[start..end])?;
+
+        match &archived_entry.value {
+            Some(archived_entry) => Ok(archived_entry.clone()),
+            None => Err(Error::internal("Entry is tombstone")),
+        }
     }
 
     pub fn len(&self) -> usize {
