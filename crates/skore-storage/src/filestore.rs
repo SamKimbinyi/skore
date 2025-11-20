@@ -212,3 +212,85 @@ impl Clone for FileStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn temp_store() -> (FileStore, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.db");
+        let store = FileStore::open(&path).unwrap();
+        (store, dir)
+    }
+
+    #[test]
+    fn test_basic_operations() {
+        let (store, _dir) = temp_store();
+
+        // Set
+        store.set(b"key".to_vec(), b"value".to_vec()).unwrap();
+
+        // Get
+        assert_eq!(store.get(b"key").unwrap(), Some(b"value".to_vec()));
+
+        // Delete
+        store.delete(b"key").unwrap();
+        assert_eq!(store.get(b"key").unwrap(), None);
+    }
+
+    #[test]
+    fn test_persistence() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.db");
+
+        // Write data
+        {
+            let store = FileStore::open(&path).unwrap();
+            store.set(b"key1".to_vec(), b"value1".to_vec()).unwrap();
+            store.set(b"key2".to_vec(), b"value2".to_vec()).unwrap();
+            store.flush().unwrap();
+        }
+
+        // Reopen and verify
+        {
+            let store = FileStore::open(&path).unwrap();
+            assert_eq!(store.get(b"key1").unwrap(), Some(b"value1".to_vec()));
+            assert_eq!(store.get(b"key2").unwrap(), Some(b"value2".to_vec()));
+        }
+    }
+
+    #[test]
+    fn test_overwrite() {
+        let (store, _dir) = temp_store();
+
+        store.set(b"key".to_vec(), b"value1".to_vec()).unwrap();
+        store.set(b"key".to_vec(), b"value2".to_vec()).unwrap();
+
+        assert_eq!(store.get(b"key").unwrap(), Some(b"value2".to_vec()));
+
+        // Should have 1 entry in index (not 2)
+
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_keys() {
+        let (store, _dir) = temp_store();
+
+        for i in 0..100 {
+            let key = format!("key{}", i).into_bytes();
+            let value = format!("value{}", i).into_bytes();
+            store.set(key, value).unwrap();
+        }
+
+        assert_eq!(store.len(), 100);
+
+        for i in 0..100 {
+            let key = format!("key{}", i).into_bytes();
+            let expected = format!("value{}", i).into_bytes();
+            assert_eq!(store.get(&key).unwrap(), Some(expected));
+        }
+    }
+}
