@@ -1,6 +1,6 @@
 use crate::entry::Entry;
 use memmap2::Mmap;
-use skore_core::{Error, Result, Store};
+use skore_core::{Error, LockResultExt, Result, Store};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -50,19 +50,13 @@ impl FileStore {
     pub fn rebuild_index(&self) -> Result<()> {
         self.remap()?;
 
-        let mmap_guard = self
-            .mmap
-            .read()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mmap_guard = self.mmap.read().poison_err()?;
 
         let mmap = mmap_guard
             .as_ref()
             .ok_or_else(|| Error::internal("No mmap available"))?;
 
-        let mut index = self
-            .index
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mut index = self.index.write().poison_err()?;
 
         let mut offset = 0;
 
@@ -101,19 +95,13 @@ impl FileStore {
     }
 
     fn remap(&self) -> Result<()> {
-        let file = self
-            .file
-            .read()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let file = self.file.read().poison_err()?;
         let file_size = *self
             .file_size
             .read()
             .map_err(|e| Error::internal(format!("Poisoned: {}", e)))?;
 
-        let mut mmap_guard = self
-            .mmap
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mut mmap_guard = self.mmap.write().poison_err()?;
 
         if file_size > 0 {
             let new_mmap = unsafe { memmap2::Mmap::map(&*file)? };
@@ -126,15 +114,9 @@ impl FileStore {
         let bytes = entry.to_bytes();
         let entry_len = bytes.len();
 
-        let mut file = self
-            .file
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mut file = self.file.write().poison_err()?;
 
-        let mut file_size = self
-            .file_size
-            .write()
-            .map_err(|e| Error::internal(format!("Lock Poisoned: {}", e)))?;
+        let mut file_size = self.file_size.write().poison_err()?;
 
         let offset = *file_size;
 
@@ -145,10 +127,7 @@ impl FileStore {
         file.flush()?;
         *file_size += entry_len as u64;
 
-        let mut index = self
-            .index
-            .write()
-            .map_err(|e| Error::internal(format!("Lock Poisoned: {}", e)))?;
+        let mut index = self.index.write().poison_err()?;
 
         if entry.value.is_some() {
             index.insert(
@@ -171,10 +150,7 @@ impl FileStore {
     }
 
     pub fn read_entry(&self, pos: EntryPos) -> Result<Vec<u8>> {
-        let mmap_guard = self
-            .mmap
-            .read()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mmap_guard = self.mmap.read().poison_err()?;
 
         let mmap = mmap_guard
             .as_ref()
@@ -194,18 +170,11 @@ impl FileStore {
             None => Err(Error::internal("Entry is tombstone")),
         }
     }
-
-    pub fn len(&self) -> usize {
-        todo!("Get number of keys in store? Maybe put in trait")
-    }
-
-    pub fn is_empty(&self) -> bool {
-        todo!("Get the size of keys in store? Maybe put in trait")
-    }
 }
 
 impl Store for FileStore {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // let index = self.index.read().poison_err();
         todo!()
     }
 
@@ -217,7 +186,15 @@ impl Store for FileStore {
         todo!()
     }
 
-    fn flush(&self) -> Result<()> {
+    fn clear(&self) -> Result<()> {
+        todo!()
+    }
+
+    fn len(&self) -> Result<usize> {
+        todo!()
+    }
+
+    fn is_empty(&self) -> Result<bool> {
         todo!()
     }
 }
@@ -271,7 +248,6 @@ mod tests {
             let store = FileStore::open(&path).unwrap();
             store.set(b"key1".to_vec(), b"value1".to_vec()).unwrap();
             store.set(b"key2".to_vec(), b"value2".to_vec()).unwrap();
-            store.flush().unwrap();
         }
 
         // Reopen and verify
@@ -293,7 +269,7 @@ mod tests {
 
         // Should have 1 entry in index (not 2)
 
-        assert_eq!(store.len(), 1);
+        assert_eq!(store.len().unwrap(), 1);
     }
 
     #[test]
@@ -306,7 +282,7 @@ mod tests {
             store.set(key, value).unwrap();
         }
 
-        assert_eq!(store.len(), 100);
+        assert_eq!(store.len().unwrap(), 100);
 
         for i in 0..100 {
             let key = format!("key{}", i).into_bytes();

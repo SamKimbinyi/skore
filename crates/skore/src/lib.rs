@@ -29,8 +29,8 @@ impl Skore {
     pub fn delete(&mut self, key: &[u8]) -> Result<()> {
         self.inner.delete(key)
     }
-    pub fn flush(&mut self) -> Result<()> {
-        self.inner.flush()
+    pub fn clear(&mut self) -> Result<()> {
+        self.inner.clear()
     }
 }
 

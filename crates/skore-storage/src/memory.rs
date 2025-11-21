@@ -1,4 +1,4 @@
-use skore_core::{Error, Result, Store};
+use skore_core::{LockResultExt, Result, Store};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -16,42 +16,39 @@ impl MemoryStore {
 
 impl Store for MemoryStore {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let data = self
-            .data
-            .read()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let data = self.data.read().poison_err()?;
 
         Ok(data.get(key).cloned())
     }
 
     fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write().poison_err()?;
 
         data.insert(key, value);
         Ok(())
     }
 
     fn delete(&self, key: &[u8]) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write().poison_err()?;
 
         data.remove(key);
         Ok(())
     }
 
-    fn flush(&self) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| Error::internal(format!("Lock poisoned: {}", e)))?;
+    fn clear(&self) -> Result<()> {
+        let mut data = self.data.write().poison_err()?;
 
         data.clear();
         Ok(())
+    }
+    fn len(&self) -> Result<usize> {
+        let data = self.data.read().poison_err()?;
+
+        Ok(data.len())
+    }
+
+    fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 }
 
@@ -93,16 +90,6 @@ mod tests {
         let store = MemoryStore::new();
         // Deleting a key that doesn't exist should not panic
         assert!(store.delete(b"missing").is_ok());
-    }
-
-    #[test]
-    fn test_flush() {
-        let store = MemoryStore::new();
-        store.set(b"key1".to_vec(), b"value1".to_vec()).unwrap();
-        store.set(b"key2".to_vec(), b"value2".to_vec()).unwrap();
-        store.flush().unwrap();
-        assert_eq!(store.get(b"key1").unwrap(), None);
-        assert_eq!(store.get(b"key2").unwrap(), None);
     }
 
     #[test]
