@@ -1,6 +1,7 @@
+use crate::backend::{BackendStats, StorageBackend};
 use crate::entry::Entry;
 use memmap2::Mmap;
-use skore_core::{Error, LockResultExt, Result, Store};
+use skore_core::{Error, LockResultExt, Result};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
@@ -14,7 +15,7 @@ pub struct EntryPos {
     len: usize,
 }
 
-pub struct FileStore {
+pub struct LogBackend {
     path: PathBuf,
     file: Arc<RwLock<File>>,
     mmap: Arc<RwLock<Option<Mmap>>>,
@@ -22,7 +23,7 @@ pub struct FileStore {
     file_size: Arc<RwLock<u64>>,
 }
 
-impl FileStore {
+impl LogBackend {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = OpenOptions::new()
@@ -33,7 +34,7 @@ impl FileStore {
 
         let file_size = file.metadata()?.len();
 
-        let store = Self {
+        let backend = Self {
             path: path.clone(),
             file: Arc::new(RwLock::new(file)),
             mmap: Arc::new(RwLock::new(None)),
@@ -42,9 +43,33 @@ impl FileStore {
         };
 
         if file_size > 0 {
-            store.rebuild_index()?;
+            backend.rebuild_index()?;
         }
-        Ok(store)
+        Ok(backend)
+    }
+
+    pub fn recover_from_crash(&self, path: &Path) -> Result<()> {
+        let backup_path = path.with_extension("old");
+        let temp_path = path.with_extension("tmp");
+
+        // Scenario 1: Crash after first rename, before second rename
+        if !path.exists() && backup_path.exists() {
+            std::fs::rename(&backup_path, path)?;
+            eprintln!("Recovered from incomplete compaction (restored backup)");
+        }
+
+        // Scenario 2: Crash during compaction, before swap
+        if path.exists() && temp_path.exists() {
+            std::fs::remove_file(&temp_path)?;
+            eprintln!("Cleaned up incomplete compaction temp file");
+        }
+
+        // Scenario 3: Successful compaction, backup not deleted
+        if path.exists() && backup_path.exists() {
+            std::fs::remove_file(&backup_path)?;
+        }
+
+        Ok(())
     }
 
     pub fn rebuild_index(&self) -> Result<()> {
@@ -172,7 +197,7 @@ impl FileStore {
     }
 }
 
-impl Store for FileStore {
+impl StorageBackend for LogBackend {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let index = self.index.read().poison_err()?;
 
@@ -183,7 +208,7 @@ impl Store for FileStore {
         }
     }
 
-    fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let new_entry = Entry::new(key, value);
         self.append_entry(new_entry)
     }
@@ -222,9 +247,31 @@ impl Store for FileStore {
     fn is_empty(&self) -> Result<bool> {
         Ok(self.len()? == 0)
     }
+
+    fn compact(&self) -> Result<BackendStats> {
+        self.stats()
+    }
+
+    fn flush(&self) -> Result<()> {
+        let file = self.file.write().poison_err()?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn stats(&self) -> Result<BackendStats> {
+        let file_size = *self.file_size.read().poison_err()?;
+        let index = self.index.read().poison_err()?;
+
+        let mut live_bytes = 0u64;
+        for pos in index.values() {
+            live_bytes += pos.len as u64;
+        }
+
+        Ok(BackendStats::new(file_size, live_bytes, index.len()))
+    }
 }
 
-impl Clone for FileStore {
+impl Clone for LogBackend {
     fn clone(&self) -> Self {
         Self {
             path: self.path.clone(),
@@ -241,10 +288,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn temp_store() -> (FileStore, TempDir) {
+    fn temp_store() -> (LogBackend, TempDir) {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test.db");
-        let store = FileStore::open(&path).unwrap();
+        let store = LogBackend::open(&path).unwrap();
         (store, dir)
     }
 
@@ -253,7 +300,7 @@ mod tests {
         let (store, _dir) = temp_store();
 
         // Set
-        store.set(b"key".to_vec(), b"value".to_vec()).unwrap();
+        store.put(b"key".to_vec(), b"value".to_vec()).unwrap();
 
         // Get
         assert_eq!(store.get(b"key").unwrap(), Some(b"value".to_vec()));
@@ -270,14 +317,14 @@ mod tests {
 
         // Write data
         {
-            let store = FileStore::open(&path).unwrap();
-            store.set(b"key1".to_vec(), b"value1".to_vec()).unwrap();
-            store.set(b"key2".to_vec(), b"value2".to_vec()).unwrap();
+            let store = LogBackend::open(&path).unwrap();
+            store.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
+            store.put(b"key2".to_vec(), b"value2".to_vec()).unwrap();
         }
 
         // Reopen and verify
         {
-            let store = FileStore::open(&path).unwrap();
+            let store = LogBackend::open(&path).unwrap();
             assert_eq!(store.get(b"key1").unwrap(), Some(b"value1".to_vec()));
             assert_eq!(store.get(b"key2").unwrap(), Some(b"value2".to_vec()));
         }
@@ -287,8 +334,8 @@ mod tests {
     fn test_overwrite() {
         let (store, _dir) = temp_store();
 
-        store.set(b"key".to_vec(), b"value1".to_vec()).unwrap();
-        store.set(b"key".to_vec(), b"value2".to_vec()).unwrap();
+        store.put(b"key".to_vec(), b"value1".to_vec()).unwrap();
+        store.put(b"key".to_vec(), b"value2".to_vec()).unwrap();
 
         assert_eq!(store.get(b"key").unwrap(), Some(b"value2".to_vec()));
 
@@ -304,7 +351,7 @@ mod tests {
         for i in 0..100 {
             let key = format!("key{}", i).into_bytes();
             let value = format!("value{}", i).into_bytes();
-            store.set(key, value).unwrap();
+            store.put(key, value).unwrap();
         }
 
         assert_eq!(store.len().unwrap(), 100);
