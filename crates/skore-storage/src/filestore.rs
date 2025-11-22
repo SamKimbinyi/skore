@@ -3,7 +3,7 @@ use memmap2::Mmap;
 use skore_core::{Error, LockResultExt, Result, Store};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -139,7 +139,7 @@ impl FileStore {
             );
         } else {
             //tombstone
-            index.remove(&bytes);
+            index.remove(&entry.key);
         }
 
         drop(file);
@@ -184,23 +184,43 @@ impl Store for FileStore {
     }
 
     fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        todo!()
+        let new_entry = Entry::new(key, value);
+        self.append_entry(new_entry)
     }
 
     fn delete(&self, key: &[u8]) -> Result<()> {
-        todo!()
+        let new_entry = Entry::tombstone(key.to_vec());
+        self.append_entry(new_entry)
     }
 
     fn clear(&self) -> Result<()> {
-        todo!()
+        {
+            let mut index = self.index.write().poison_err()?;
+            index.clear();
+        }
+
+        {
+            let file = self.file.write().poison_err()?;
+            file.set_len(0)?;
+            file.sync_all()?;
+        }
+        {
+            let mut file_size = self.file_size.write().poison_err()?;
+            *file_size = 0;
+        }
+        {
+            let mut mmap_guard = self.mmap.write().poison_err()?;
+            *mmap_guard = None;
+        }
+        Ok(())
     }
 
     fn len(&self) -> Result<usize> {
-        todo!()
+        Ok(self.index.read().unwrap().len())
     }
 
     fn is_empty(&self) -> Result<bool> {
-        todo!()
+        Ok(self.len()? == 0)
     }
 }
 
