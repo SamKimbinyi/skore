@@ -174,8 +174,13 @@ impl FileStore {
 
 impl Store for FileStore {
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        // let index = self.index.read().poison_err();
-        todo!()
+        let index = self.index.read().poison_err()?;
+
+        if let Some(&pos) = index.get(key) {
+            Ok(Some(self.read_entry(pos)?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
