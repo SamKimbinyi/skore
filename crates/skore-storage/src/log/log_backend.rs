@@ -198,6 +198,11 @@ impl LogBackend {
 }
 
 impl StorageBackend for LogBackend {
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let new_entry = Entry::new(key, value);
+        self.append_entry(new_entry)
+    }
+
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let index = self.index.read().poison_err()?;
 
@@ -208,14 +213,92 @@ impl StorageBackend for LogBackend {
         }
     }
 
-    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let new_entry = Entry::new(key, value);
-        self.append_entry(new_entry)
-    }
-
     fn delete(&self, key: &[u8]) -> Result<()> {
         let new_entry = Entry::tombstone(key.to_vec());
         self.append_entry(new_entry)
+    }
+
+    fn flush(&self) -> Result<()> {
+        let file = self.file.write().poison_err()?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn compact(&self) -> Result<BackendStats> {
+        let temp_path = self.path.with_extension("tmp");
+        let mut tempfile = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)?;
+
+        let mut new_index = HashMap::new();
+        let mut offset = 0u64;
+
+        {
+            let index = self.index.read().poison_err()?;
+
+            for (key, pos) in index.iter() {
+                let value = self.read_entry(*pos)?;
+
+                let entry = Entry::new(key.clone(), value);
+                let bytes = entry.to_bytes();
+
+                tempfile.write_all(&bytes)?;
+
+                new_index.insert(
+                    key.clone(),
+                    EntryPos {
+                        offset,
+                        len: bytes.len(),
+                    },
+                );
+
+                offset += bytes.len() as u64;
+            }
+        }
+
+        tempfile.sync_all()?;
+        drop(tempfile);
+
+        //Swap files
+        let backup_path = self.path.with_extension("backup");
+        std::fs::rename(&self.path, &backup_path)?;
+
+        std::fs::rename(&temp_path, &self.path)?;
+        let _ = std::fs::remove_file(&backup_path);
+
+        //Update Index
+
+        {
+            let mut index_gaurd = self.index.write().poison_err()?;
+            *index_gaurd = new_index;
+        }
+
+        {
+            let mut file_size_guard = self.file_size.write().poison_err()?;
+            *file_size_guard = offset;
+        }
+
+        {
+            let mut file_guard = self.file.write().poison_err()?;
+            *file_guard = OpenOptions::new().read(true).write(true).open(&self.path)?;
+        }
+
+        self.remap()?;
+        self.stats()
+    }
+
+    fn stats(&self) -> Result<BackendStats> {
+        let file_size = *self.file_size.read().poison_err()?;
+        let index = self.index.read().poison_err()?;
+
+        let mut live_bytes = 0u64;
+        for pos in index.values() {
+            live_bytes += pos.len as u64;
+        }
+
+        Ok(BackendStats::new(file_size, live_bytes, index.len()))
     }
 
     fn clear(&self) -> Result<()> {
@@ -246,28 +329,6 @@ impl StorageBackend for LogBackend {
 
     fn is_empty(&self) -> Result<bool> {
         Ok(self.len()? == 0)
-    }
-
-    fn compact(&self) -> Result<BackendStats> {
-        self.stats()
-    }
-
-    fn flush(&self) -> Result<()> {
-        let file = self.file.write().poison_err()?;
-        file.sync_all()?;
-        Ok(())
-    }
-
-    fn stats(&self) -> Result<BackendStats> {
-        let file_size = *self.file_size.read().poison_err()?;
-        let index = self.index.read().poison_err()?;
-
-        let mut live_bytes = 0u64;
-        for pos in index.values() {
-            live_bytes += pos.len as u64;
-        }
-
-        Ok(BackendStats::new(file_size, live_bytes, index.len()))
     }
 }
 
@@ -361,5 +422,47 @@ mod tests {
             let expected = format!("value{}", i).into_bytes();
             assert_eq!(store.get(&key).unwrap(), Some(expected));
         }
+    }
+
+    #[test]
+    fn test_compaction() {
+        let (store, _dir) = temp_store();
+        for i in 0..100 {
+            store
+                .put(format!("key{}", i).into_bytes(), b"value".to_vec())
+                .unwrap();
+        }
+
+        for i in 0..50 {
+            store
+                .put(format!("key{}", i).into_bytes(), b"new_value".to_vec())
+                .unwrap();
+        }
+
+        for i in 50..75 {
+            store.delete(&format!("key{}", i).into_bytes()).unwrap();
+        }
+
+        let stats_mid = store.stats().unwrap();
+        println!(
+            "After updates: {} bytes total, {} live (waste: {:.1}%)",
+            stats_mid.total_bytes,
+            stats_mid.live_bytes,
+            stats_mid.waste_ratio * 100.0
+        );
+
+        store.compact().unwrap();
+
+        let stats_after = store.stats().unwrap();
+
+        assert_eq!(stats_after.total_bytes, stats_after.live_bytes);
+
+        // Verify: only 75 keys remain (25 were deleted)
+        assert_eq!(store.len().unwrap(), 75);
+
+        // Verify: data is still readable
+        assert_eq!(store.get(b"key0").unwrap(), Some(b"new_value".to_vec()));
+        assert_eq!(store.get(b"key50").unwrap(), None); // Was deleted
+        assert_eq!(store.get(b"key99").unwrap(), Some(b"value".to_vec()));
     }
 }
