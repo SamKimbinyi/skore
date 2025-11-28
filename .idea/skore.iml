@@ -7,6 +7,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/skore-core/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/skore-storage/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/skore/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/skore-protocol/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/skore-server/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

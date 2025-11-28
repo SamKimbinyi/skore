@@ -329,6 +329,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "skore-protocol"
+version = "0.1.0"
+dependencies = [
+ "skore-core",
+]
+
+[[package]]
+name = "skore-server"
+version = "0.1.0"
+
+[[package]]
 name = "skore-storage"
 version = "0.1.0"
 dependencies = [
