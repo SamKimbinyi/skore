@@ -6,6 +6,12 @@ pub struct MemoryStore {
     data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
 }
 
+impl Default for MemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MemoryStore {
     pub fn new() -> Self {
         MemoryStore {

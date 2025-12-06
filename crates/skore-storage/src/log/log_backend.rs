@@ -30,6 +30,7 @@ impl LogBackend {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&path)?;
 
         let file_size = file.metadata()?.len();
@@ -159,7 +160,7 @@ impl LogBackend {
                 entry.key.clone(),
                 EntryPos {
                     offset,
-                    len: entry_len as usize,
+                    len: entry_len,
                 },
             );
         } else {
