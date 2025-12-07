@@ -1,6 +1,7 @@
 # skore
 
 [![Rust](https://github.com/SamKimbinyi/skore/actions/workflows/rust.yml/badge.svg)](https://github.com/SamKimbinyi/skore/actions/workflows/rust.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SamKimbinyi/skore)
 
 A key-value store implementation in Rust. This is a learning project exploring storage engines, memory-mapped files, and
 database fundamentals.
