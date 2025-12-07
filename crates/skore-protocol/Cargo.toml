@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 skore-core = { path = "../skore-core" }
+thiserror = "2.0.17"

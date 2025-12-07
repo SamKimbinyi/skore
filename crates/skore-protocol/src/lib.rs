@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RespValue {
     SimpleString(String),
     Error(String),
@@ -7,7 +7,31 @@ pub enum RespValue {
     Array(Vec<RespValue>),
 }
 
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum ParseError {
+    #[error("Incomplete Data")]
+    Incomplete,
+
+    #[error("Invalid format {0}")]
+    InvalidFormat(String),
+
+    #[error("Invalid UTF-8")]
+    InvalidUtf8,
+
+    #[error("Invalid Integer")]
+    InvalidInteger,
+}
+
 const CRLF: &[u8] = b"\r\n";
+
+fn find_crlf(bytes: &[u8], start: usize) -> Result<usize, ParseError> {
+    for i in start..bytes.len().saturating_sub(1) {
+        if &bytes[i..i + 2] == CRLF {
+            return Ok(i);
+        }
+    }
+    Err(ParseError::Incomplete)
+}
 
 impl RespValue {
     pub fn encode(&self) -> Vec<u8> {
@@ -57,6 +81,50 @@ impl RespValue {
             }
         }
     }
+
+    pub fn decode(&self, bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        if bytes.is_empty() {
+            return Err(ParseError::Incomplete);
+        }
+
+        match bytes[0] {
+            b'+' => Self::decode_simple_string(bytes),
+            b'-' => Self::decode_error(bytes),
+            b':' => Self::decode_integer(bytes),
+            b'$' => Self::decode_bulk_string(bytes),
+            b'*' => Self::decode_array(bytes),
+            _ => Err(ParseError::InvalidFormat(format!(
+                "Invalid type bytes{0}",
+                bytes[0] as char
+            ))),
+        }
+    }
+    fn decode_simple_string(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        let string_end = find_crlf(bytes, 1)? + 1;
+        let content = &bytes[1..string_end];
+
+        let s = std::str::from_utf8(content)
+            .map_err(|_| ParseError::InvalidUtf8)?
+            .to_string();
+
+        Ok((RespValue::SimpleString(s), string_end + 2))
+    }
+
+    fn decode_error(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        Self::decode_simple_string(bytes)
+    }
+
+    fn decode_integer(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        todo!()
+    }
+
+    fn decode_bulk_string(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        todo!()
+    }
+
+    fn decode_array(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
+        todo!()
+    }
     pub fn ok() -> Self {
         RespValue::SimpleString("OK".to_string())
     }
@@ -73,7 +141,7 @@ impl RespValue {
         RespValue::BulkString(None)
     }
 
-    pub fn arra(values: Vec<Self>) -> Self {
+    pub fn array(values: Vec<Self>) -> Self {
         RespValue::Array(values)
     }
 }
@@ -81,6 +149,20 @@ impl RespValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_crlf_after_start_offset() {
+        let bytes = b"aaa\r\nbbb";
+        let pos = find_crlf(bytes, 2).unwrap();
+        assert_eq!(pos, 3);
+    }
+
+    #[test]
+    fn returns_incomplete_when_missing() {
+        let bytes = b"helloworld";
+        let err = find_crlf(bytes, 0).unwrap_err();
+        assert_eq!(err, ParseError::Incomplete);
+    }
 
     #[test]
     fn test_resp_value_creation() {
@@ -117,14 +199,26 @@ mod tests {
     #[test]
     fn test_encode_simple_string() {
         let value = RespValue::SimpleString("OK".to_string());
-        let encoded = value.encode();
+        let encoded = {
+            let this = &value;
+            let mut buf = Vec::new();
+            this.encode_to(&mut buf);
+
+            buf
+        };
         assert_eq!(encoded, b"+OK\r\n");
     }
 
     #[test]
     fn test_encode_error() {
         let value = RespValue::Error("ERR unknown command".to_string());
-        let encoded = value.encode();
+        let encoded = {
+            let this = &value;
+            let mut buf = Vec::new();
+            this.encode_to(&mut buf);
+
+            buf
+        };
         assert_eq!(encoded, b"-ERR unknown command\r\n");
     }
 

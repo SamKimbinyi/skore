@@ -333,6 +333,7 @@ name = "skore-protocol"
 version = "0.1.0"
 dependencies = [
  "skore-core",
+ "thiserror",
 ]
 
 [[package]]
