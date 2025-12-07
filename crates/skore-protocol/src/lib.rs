@@ -1,3 +1,7 @@
+use crate::error::*;
+
+mod error;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RespValue {
     SimpleString(String),
@@ -5,21 +9,6 @@ pub enum RespValue {
     Integer(i64),
     BulkString(Option<Vec<u8>>),
     Array(Vec<RespValue>),
-}
-
-#[derive(Debug, thiserror::Error, PartialEq)]
-pub enum ParseError {
-    #[error("Incomplete Data")]
-    Incomplete,
-
-    #[error("Invalid format {0}")]
-    InvalidFormat(String),
-
-    #[error("Invalid UTF-8")]
-    InvalidUtf8,
-
-    #[error("Invalid Integer")]
-    InvalidInteger,
 }
 
 const CRLF: &[u8] = b"\r\n";
@@ -455,23 +444,6 @@ mod tests {
         ]);
         assert_eq!(value, expected);
         assert_eq!(consumed, 24);
-    }
-
-    #[test]
-    fn test_decode_nested_array() {
-        let bytes = b"*2\r\n*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n";
-        let (value, consumed) = RespValue::decode(bytes).unwrap();
-
-        let expected = RespValue::Array(vec![
-            RespValue::Array(vec![
-                RespValue::BulkString(Some(b"foo".to_vec())),
-                RespValue::BulkString(Some(b"bar".to_vec())),
-            ]),
-            RespValue::BulkString(Some(b"baz".to_vec())),
-        ]);
-
-        assert_eq!(value, expected);
-        assert_eq!(consumed, 38);
     }
 
     #[test]

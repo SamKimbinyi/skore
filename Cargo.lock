@@ -416,6 +416,7 @@ dependencies = [
  "skore-core",
  "skore-protocol",
  "skore-storage",
+ "thiserror",
  "tokio",
 ]
 
