@@ -6,3 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+skore-core = { path = "../skore-core" }
+skore-storage = { path = "../skore-storage" }
+skore-protocol = { path = "../skore-protocol" }
+tokio = { version = "1", features = ["full"] }
