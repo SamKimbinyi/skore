@@ -100,7 +100,7 @@ impl RespValue {
         }
     }
     fn decode_simple_string(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
-        let line_end = find_crlf(bytes, 1)? + 1;
+        let line_end = find_crlf(bytes, 1)?;
         let content = &bytes[1..line_end];
 
         let s = std::str::from_utf8(content)
@@ -122,7 +122,7 @@ impl RespValue {
     }
 
     fn decode_integer(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
-        let line_end = find_crlf(bytes, 1)? + 1;
+        let line_end = find_crlf(bytes, 1)?;
         let content = &bytes[1..line_end];
 
         let s = std::str::from_utf8(content).map_err(|_| ParseError::InvalidUtf8)?;
@@ -131,7 +131,7 @@ impl RespValue {
     }
 
     fn decode_bulk_string(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
-        let line_end = find_crlf(bytes, 1)? + 1;
+        let line_end = find_crlf(bytes, 1)?;
         let content = &bytes[1..line_end];
 
         let length_string = std::str::from_utf8(content).map_err(|_| ParseError::InvalidUtf8)?;
@@ -163,12 +163,12 @@ impl RespValue {
             ));
         }
 
-        let data = bytes[data_end + 2..].to_vec();
+        let data = bytes[data_start..data_end].to_vec();
         Ok((RespValue::BulkString(Some(data)), data_end + 2))
     }
 
     fn decode_array(bytes: &[u8]) -> Result<(RespValue, usize), ParseError> {
-        let line_end = find_crlf(bytes, 1)? + 1;
+        let line_end = find_crlf(bytes, 1)?;
         let count_string = &bytes[1..line_end];
 
         let count_string =
@@ -190,7 +190,7 @@ impl RespValue {
             pos += consumed;
         }
 
-        Ok((RespValue::Array(elements), line_end + pos))
+        Ok((RespValue::Array(elements), pos))
     }
     pub fn ok() -> Self {
         RespValue::SimpleString("OK".to_string())
